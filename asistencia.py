@@ -27,7 +27,7 @@
 # # Función para cargar el modelo
 # @st.cache_resource
 # def load_model():
-#     model = tf.keras.models.load_model('./face_recognition_model.h5')
+#     model = tf.keras.models.load_model('./caras_model.h5')
 #     return model
 
 # with st.spinner('Modelo está cargando...'):
