@@ -25,224 +25,146 @@
 
 # #Descargue una foto de una flor que le sirva de ícono 
 
-# # importing the libraries and dependencies needed for creating the UI and supporting the deep learning models used in the project
-# import os
-# os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-# import streamlit as st  
-# import tensorflow as tf # TensorFlow is required for Keras to work
-# from PIL import Image
-# import numpy as np
+import streamlit as st
+import torch
+from PIL import Image
+from facenet_pytorch import InceptionResnetV1, MTCNN
+import matplotlib.pyplot as plt
+import warnings
+from datetime import datetime
+from scipy.spatial.distance import euclidean
+import numpy as np
+import os
 
-# # hide deprication warnings which directly don't affect the working of the application
-# import warnings
-# warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore")
 
-# # set some pre-defined configurations for the page, such as the page title, logo-icon, page loading state (whether the page is loaded automatically or you need to perform some action for loading)
-# st.set_page_config(
-#     page_title="Reconocimiento de Caras",
-#     page_icon = ":angry:",
-#     initial_sidebar_state = 'auto'
-# )
+st.set_page_config(
+    page_title="Face recognition",
+    page_icon=":sauropod:"
+)
 
-# # hide the part of the code, as this is just for adding some custom CSS styling but not a part of the main idea 
-# hide_streamlit_style = """
-# 	<style>
-#   #MainMenu {visibility: hidden;}
-# 	footer {visibility: hidden;}
-#   </style>
-# """
+st.title("Reconocimiento facial con PyTorch y Streamlit")
+st.write("Somos un equipo apasionado de profesionales dedicados a hacer la diferencia")
+st.write("Este proyecto fue desarrollado por María Camila Villamizar & Carlos Fernando Escobar Silva")
 
-# st.markdown(hide_streamlit_style, unsafe_allow_html=True) # Oculta el código CSS de la pantalla, ya que están incrustados en el texto de rebajas. Además, permita que Streamlit se procese de forma insegura como HTML
+class_names = open("./clases.txt", "r").readlines()
 
-# #st.set_option('deprecation.showfileUploaderEncoding', False)
-# @st.cache_resource
-# def load_model():
-#     model=tf.keras.models.load_model('./caras_model.h5')
-#     return model
-# with st.spinner('Modelo está cargando..'):
-#     model=load_model()
+# Inicializar dispositivo
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+# Función para inicializar el modelo
+@st.cache_resource
+def inicializar_modelo(device):
+    # Inicializar el modelo con pesos preentrenados
+    modelo = InceptionResnetV1(pretrained='vggface2', classify=False, device=device).eval()
+    return modelo
+
+# Inicializar el modelo
+with st.spinner('Modelo está cargando'):
+    encoder = inicializar_modelo(device)
+
+# Crear el detector MTCNN
+mtcnn = MTCNN(select_largest=True, min_face_size=20, thresholds=[0.6, 0.7, 0.7], post_process=False, image_size=160, device=device)
+
+def cargar_imagen(path):
+    imagen = Image.open(path)
+    imagen = imagen.convert('RGB')
+    return imagen
+
+def procesamiento_imagen(image):
+     boxes, probs, landmarks = mtcnn.detect(image, landmarks=True)
+    # Detección de cara
+     faces = mtcnn(image)
+
+     embeddings = []
+     for face in faces:
+        face = face.unsqueeze(0)
+        embedding = encoder(face).detach().cpu()
+        embeddings.append(embedding)
     
+     return embeddings, boxes
 
-
-# with st.sidebar:
-#         #st.image('rosa.jpeg')
-#         st.title("Reconocimiento de imagen")
-#         st.header("By  Camila Villamizar & Carlos Escobar")
-#         st.subheader("Reconocimiento de imagen para caras")
-#         st.write("UNAB")
-#         confianza = st.slider("Seleccione el nivel de confianza %", 0, 100, 50)/100
-
-# col1, col2, col3 = st.columns(3)
-
-# """ with col2:
-#      st.image('rosa.jpeg') """
-
-# #st.image('logo.png')
-# st.title("Modelo de reconocimiento de Caras")
-# st.write("Somos un equipo apasionado de profesionales dedicados a hacer la diferencia")
-# st.write("""
-#          # Detección de Caras
-#          """
-#          )
-
-# def predict(image_data, model, class_names):
+def identificar(embedding_cara, embeddings):
+    comparaciones = {}
+    for nombre, emb_list in embeddings.items():
+        min_dist = min(euclidean(embedding_cara.flatten(), emb.flatten()) for emb in emb_list)
+        comparaciones[nombre] = min_dist
     
-#     image_data = image_data.resize((180, 180))
+    nombre_reconocido = min(comparaciones, key=comparaciones.get)
+    return nombre_reconocido
+
+def identificar_multiples_rostros(imagen, embeddings):
+    embeddings_imagen, boxes = procesamiento_imagen(imagen)
+    nombres_caras = []
+
+    for i, embedding in enumerate(embeddings_imagen):
+        nombre = identificar(embedding, embeddings)
+        nombres_caras.append((nombre, boxes[i]))
+
+    return nombres_caras
+
+ruta_dataset = r"data"
+
+@st.cache_resource
+def cargar_embeddings():
+    embeddings = {}
+
+    for root, dirs, files in os.walk(ruta_dataset):
+        for name in dirs:
+            nombre_persona = name
+            embeddings[nombre_persona] = []
+            ruta_persona = os.path.join(root, name)
+            for filename in os.listdir(ruta_persona):
+                if filename.endswith(".jpg") or filename.endswith(".jpeg") or filename.endswith(".png"):
+                    ruta_imagen = os.path.join(ruta_persona, filename)
+                    embeddings[nombre_persona].append(procesamiento_imagen(cargar_imagen(ruta_imagen)))
     
-#     image = tf.keras.utils.img_to_array(image_data)
-#     image = tf.expand_dims(image, 0) # Create a batch
+    return embeddings
 
+embeddings = cargar_embeddings()
+
+def registrar_asistencia(participantes):
+    fecha_actual = datetime.now().strftime("%Y-%m-%d")
+    archivo_registro = f"registro_asistencia_{fecha_actual}.txt"
+
+    try:
+        with open(archivo_registro, 'r') as archivo:
+            asistencia_previa = archivo.read().splitlines()
+    except FileNotFoundError:
+        asistencia_previa = []
     
-#     # Predecir con el modelo
-#     prediction = model.predict(image)
-#     index = np.argmax(prediction)
-#     score = tf.nn.softmax(prediction[0])
-#     class_name = class_names[index]
+    nuevos_participantes = [nombre for nombre in participantes if nombre not in asistencia_previa]
+    if nuevos_participantes:
+        with open(archivo_registro, 'a') as archivo:
+            for nombre in nuevos_participantes:
+                archivo.write(nombre + "\n")
+
+# Subir imagen desde archivo
+uploaded_file = st.file_uploader("Elija una imagen...", type=["jpg", "png", "jfif"])
+img_file_buffer = st.camera_input("O capture una foto para identificar una cara")
+
+if img_file_buffer is not None:
+    # Cargar la imagen
+    image = Image.open(img_file_buffer)
+elif uploaded_file is not None:
+    image = Image.open(uploaded_file)
+else:
+    st.write("Por favor tome una foto o suba una imagen")
+    image = None
     
-#     return class_name, score
+if image is not None:
+    st.image(image, use_column_width=True)
 
+    #Procesar la imagen
+    nombres_caras = identificar_multiples_rostros(image, embeddings)
+    if nombres_caras:
+        nombres_detectados = [nombre for nombre, _ in nombres_caras]
+        registrar_asistencia(nombres_detectados)
 
-# class_names = open("./clases.txt", "r").readlines()
-
-# img_file_buffer = st.camera_input("Capture una foto para tomar asistencia")    
-# if img_file_buffer is None:
-#     st.text("Por favor tome una foto")
-# else:
-#     image = Image.open(img_file_buffer)
-#     st.image(image, use_column_width=True)
-    
-#     # Realizar la predicción
-#     class_name, score = predict(image, model, class_names)
-    
-#     # Mostrar el resultado
-
-#     if np.max(score)>0.5:
-#         st.subheader(f"Estudiante: {class_name}")
-#         st.text(f"Puntuación de confianza: {100 * np.max(score):.2f}%")
-#     else:
-#         st.text(f"No se pudo determinar el estudiante")
-
-
-# PARTE 2 (USANDO CV2)
-# import os
-# os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-# import streamlit as st  
-# import tensorflow as tf
-# from PIL import Image
-# import numpy as np
-# import cv2
-# import dlib
-# import face_recognition
-# from datetime import datetime
-
-# # Configuración de la página de Streamlit
-# st.set_page_config(
-#     page_title="Reconocimiento de Rostros",
-#     page_icon=":smiley:",
-#     initial_sidebar_state='auto'
-# )
-
-# # Estilos CSS para ocultar el menú y el pie de página
-# hide_streamlit_style = """
-#     <style>
-#     #MainMenu {visibility: hidden;}
-#     footer {visibility: hidden;}
-#     </style>
-# """
-# st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-# # Función para cargar el modelo
-# @st.cache_resource
-# def load_model():
-#     model = tf.keras.models.load_model('./caras_model.h5')
-#     return model
-
-# with st.spinner('Modelo está cargando...'):
-#     model = load_model()
-
-# # Configuración de la barra lateral
-# with st.sidebar:
-#     st.image('face_icon.png')
-#     st.title("Reconocimiento de Rostros")
-#     st.subheader("Identifica rostros en imágenes y videos")
-#     confianza = st.slider("Seleccione la confianza %", 0, 100, 50) / 100
-
-# # Título de la página
-# st.title("Modelo de Reconocimiento de Rostros")
-# st.write("Aplicación para la toma de asistencia mediante el reconocimiento de rostros.")
-
-# # Función para predecir el rostro
-# def import_and_predict(image_data, model):
-#     image_data = image_data.resize((180, 180))
-#     image = tf.keras.utils.img_to_array(image_data)
-#     image = tf.expand_dims(image, 0)  # Crear un batch
-#     prediction = model.predict(image)
-#     return prediction
-
-# # Función para registrar la asistencia
-# def register_attendance(name):
-#     date_str = datetime.now().strftime('%Y-%m-%d')
-#     with open('attendance.txt', 'a+') as file:
-#         file.seek(0)
-#         lines = file.readlines()
-#         entries = [line.strip() for line in lines]
-#         if f"{name} - {date_str}" not in entries:
-#             file.write(f"{name} - {date_str}\n")
-
-# # Cargar imágenes o videos
-# upload_option = st.selectbox("Seleccione la fuente de entrada:", ["Cargar Imagen", "Cargar Video"])
-
-# if upload_option == "Cargar Imagen":
-#     img_file_buffer = st.file_uploader("Cargar una imagen", type=["jpg", "jpeg", "png"])
-#     if img_file_buffer is not None:
-#         image = Image.open(img_file_buffer)
-#         st.image(image, caption='Imagen cargada', use_column_width=True)
-#         # Convertir la imagen a formato compatible con face_recognition
-#         image_np = np.array(image)
-#         face_locations = face_recognition.face_locations(image_np)
-#         face_encodings = face_recognition.face_encodings(image_np, face_locations)
-        
-#         for face_encoding in face_encodings:
-#             predictions = model.predict([face_encoding])
-#             name = "Desconocido"
-#             # Verificar la predicción más confiable
-#             if max(predictions) > confianza:
-#                 name = class_names[np.argmax(predictions)]
-#                 register_attendance(name)
-#             st.write(f"Rostro reconocido: {name}")
-
-# elif upload_option == "Cargar Video":
-#     video_file_buffer = st.file_uploader("Cargar un video", type=["mp4", "mov", "avi"])
-#     if video_file_buffer is not None:
-#         video_bytes = video_file_buffer.read()
-#         st.video(video_bytes)
-#         temp_video_file = 'temp_video.mp4'
-#         with open(temp_video_file, 'wb') as f:
-#             f.write(video_bytes)
-        
-#         video_capture = cv2.VideoCapture(temp_video_file)
-#         while video_capture.isOpened():
-#             ret, frame = video_capture.read()
-#             if not ret:
-#                 break
-            
-#             face_locations = face_recognition.face_locations(frame)
-#             face_encodings = face_recognition.face_encodings(frame, face_locations)
-            
-#             for face_encoding in face_encodings:
-#                 predictions = model.predict([face_encoding])
-#                 name = "Desconocido"
-#                 if max(predictions) > confianza:
-#                     name = class_names[np.argmax(predictions)]
-#                     register_attendance(name)
-#                 cv2.putText(frame, name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-            
-#             cv2.imshow('Video', frame)
-#             if cv2.waitKey(1) & 0xFF == ord('q'):
-#                 break
-        
-#         video_capture.release()
-#         cv2.destroyAllWindows()
-
-# # Leer los nombres de las clases
-# class_names = open("./clases.txt", "r").readlines()
+        for nombre, box in nombres_caras:
+            x1, y1, x2, y2 = box.astype(int)
+            recorte_cara = np.array(image)[y1:y2, x1:x2]
+            st.image(recorte_cara, caption=nombre)
+        st.success(f"Asistieron a clase: {', '.join(nombres_detectados)}")
+    else:
+        st.text("No se detectó ningún rostro en la imagen")

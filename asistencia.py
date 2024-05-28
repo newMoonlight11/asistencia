@@ -43,13 +43,14 @@ _mtcnn = MTCNN(select_largest=True, min_face_size=20, thresholds=[0.6, 0.7, 0.7]
 @st.cache_resource
 def obtener_embeddings(ruta_dataset, _encoder, _mtcnn, device):
     embeddings = {}
+    embeddings = {}
     nombres = []
     for root, dirs, files in os.walk(ruta_dataset):
         for file in files:
             if file.endswith(('jpg', 'png', 'jfif')):
                 image_path = os.path.join(root, file)
                 image = Image.open(image_path)
-                
+               
                 # Detección de cara
                 face = _mtcnn(image)
                 if face is not None:
@@ -57,6 +58,10 @@ def obtener_embeddings(ruta_dataset, _encoder, _mtcnn, device):
                     embedding_cara = _encoder.forward(face.reshape((1, 3, 160, 160))).detach().cpu()
                     # Obtener el nombre de la persona (carpeta)
                     nombre = os.path.basename(root)
+                    if nombre not in embeddings:
+                        embeddings[nombre] = []
+                        nombres.append(nombre)
+                    embeddings[nombre].append(embedding_cara)
                     if nombre not in embeddings:
                         embeddings[nombre] = []
                         nombres.append(nombre)
