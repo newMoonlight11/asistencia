@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import warnings
 from datetime import datetime
 from scipy.spatial.distance import euclidean
+from scipy.spatial.distance import cosine
 import numpy as np
 import os
 
@@ -72,7 +73,20 @@ with st.spinner('Procesando el dataset...'):
     # st.write("Embeddings generados para todas las imágenes en el dataset.")
 
 def detectar_y_mostrar_caras(image, embeddings, nombres):
-    # Detección de bounding box y landmarks
+    # Convertir la imagen a RGB si es necesario
+    if image.mode != 'RGB':
+        image = image.convert('RGB')
+
+    # Redimensionar la imagen a 160x160 píxeles
+    image = image.resize((160, 160))
+
+    # Convertir la imagen a un tensor de NumPy y luego a tensor de PyTorch
+    image_tensor = torch.tensor(np.array(image))
+
+    # Añadir dimensión de lote
+    image_tensor = image_tensor.unsqueeze(0)
+
+    # Detección de caras
     boxes, probs, landmarks = _mtcnn.detect(image, landmarks=True)
 
     if boxes is not None:
@@ -84,24 +98,27 @@ def detectar_y_mostrar_caras(image, embeddings, nombres):
             ax.add_patch(rect)
         st.pyplot(fig)
 
-        # Detección de cara
-        face = _mtcnn(image)
+        # Detección de caras
+        faces = _mtcnn(image_tensor)
 
-        # Embedding de cara
-        if face is not None:
-            embedding_cara = _encoder.forward(face.reshape((1, 3, 160, 160))).detach().cpu()
+        if faces is not None:
+            for i, face in enumerate(faces):
+                # Embedding de cara
+                embedding_cara = _encoder.forward(face.reshape((1, 3, 160, 160))).detach().cpu()
 
-            # Comparar con embeddings del dataset
-            comparaciones = {}
-            for nombre, lista_embeddings in embeddings.items():
-                min_dist = min(euclidean(embedding_cara.flatten(), emb.flatten()) for emb in lista_embeddings)
-                comparaciones[nombre] = min_dist
-            nombre_reconocido = min(comparaciones, key=comparaciones.get)
-            st.write(f'Persona reconocida: {nombre_reconocido}')
+                # Comparar con embeddings del dataset
+                comparaciones = {}
+                for nombres, lista_embeddings in embeddings.items():
+                    min_dist = min(cosine(embedding_cara.flatten(), emb.flatten()) for emb in lista_embeddings)
+                    comparaciones[nombres] = min_dist
+
+                # Obtener el nombre con la menor distancia
+                nombre_reconocido = min(comparaciones, key=comparaciones.get)
+                st.write(f'Persona reconocida {i + 1}: {nombre_reconocido}')
         else:
             st.write("No se detectó ninguna cara en la imagen.")
-    else:
-        st.write("No se detectó ninguna cara en la imagen.")
+
+
 
 
 # Subir imagen desde archivo
