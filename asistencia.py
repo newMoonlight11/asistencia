@@ -16,9 +16,9 @@ st.set_page_config(
     page_icon=":sauropod:"
 )
 
+st.image('ing_s.png', width=300)
 st.title("Reconocimiento facial con PyTorch y Streamlit")
-st.write("Somos un equipo apasionado de profesionales dedicados a hacer la diferencia")
-st.write("Este proyecto fue desarrollado por María Camila Villamizar & Carlos Fernando Escobar Silva")
+st.write("Este proyecto se centra en el desarrollo de una aplicación web interactiva para el reconocimiento facial utilizando PyTorch y Streamlit, permitiendo la captura de imágenes y también la carga de imágenes. Implementa un modelo preentrenado de InceptionResnetV1 para la generación de embeddings faciales y utiliza MTCNN para la detección de caras en imágenes.")
 
 class_names = open("./clases.txt", "r").readlines()
 
@@ -41,7 +41,7 @@ _mtcnn = MTCNN(select_largest=True, min_face_size=20, thresholds=[0.6, 0.7, 0.7]
 
 @st.cache_resource
 def obtener_embeddings(ruta_dataset, _encoder, _mtcnn, device):
-    embeddings = []
+    embeddings = {}
     nombres = []
     for root, dirs, files in os.walk(ruta_dataset):
         for file in files:
@@ -54,10 +54,12 @@ def obtener_embeddings(ruta_dataset, _encoder, _mtcnn, device):
                 if face is not None:
                     # Embedding de cara
                     embedding_cara = _encoder.forward(face.reshape((1, 3, 160, 160))).detach().cpu()
-                    embeddings.append(embedding_cara)
                     # Obtener el nombre de la persona (carpeta)
                     nombre = os.path.basename(root)
-                    nombres.append(nombre)
+                    if nombre not in embeddings:
+                        embeddings[nombre] = []
+                        nombres.append(nombre)
+                    embeddings[nombre].append(embedding_cara)
                 else:
                     st.write("")
     return embeddings, nombres
@@ -67,14 +69,13 @@ ruta_dataset = r"data"
 # Obtener embeddings de todas las imágenes en el dataset
 with st.spinner('Procesando el dataset...'):
     embeddings, nombres = obtener_embeddings(ruta_dataset, _encoder, _mtcnn, device)
-    st.write("Embeddings generados para todas las imágenes en el dataset.")
+    # st.write("Embeddings generados para todas las imágenes en el dataset.")
 
 def detectar_y_mostrar_caras(image, embeddings, nombres):
     # Detección de bounding box y landmarks
     boxes, probs, landmarks = _mtcnn.detect(image, landmarks=True)
 
     if boxes is not None:
-        # Dibujar las bounding boxes y landmarks en la imagen
         fig, ax = plt.subplots()
         ax.imshow(image)
         for box, landmark in zip(boxes, landmarks):
@@ -92,8 +93,8 @@ def detectar_y_mostrar_caras(image, embeddings, nombres):
 
             # Comparar con embeddings del dataset
             comparaciones = {}
-            for nombre, embeddings in embeddings.items():
-                min_dist = min(euclidean(embedding_cara.flatten(), emb.flatten()) for emb in embeddings)
+            for nombre, lista_embeddings in embeddings.items():
+                min_dist = min(euclidean(embedding_cara.flatten(), emb.flatten()) for emb in lista_embeddings)
                 comparaciones[nombre] = min_dist
             nombre_reconocido = min(comparaciones, key=comparaciones.get)
             st.write(f'Persona reconocida: {nombre_reconocido}')
@@ -101,6 +102,7 @@ def detectar_y_mostrar_caras(image, embeddings, nombres):
             st.write("No se detectó ninguna cara en la imagen.")
     else:
         st.write("No se detectó ninguna cara en la imagen.")
+
 
 # Subir imagen desde archivo
 uploaded_file = st.file_uploader("Elija una imagen...", type=["jpg", "png", "jfif"])
@@ -141,3 +143,6 @@ def registrar_asistencia(participantes):
         with open(archivo_registro, 'a') as archivo:
             for nombre in nuevos_participantes:
                 archivo.write(nombre + "\n")
+
+st.markdown("***")
+st.markdown("<h6 style='text-align: center;'>© 2024 Proyecto de Reconocimiento Facial | Desarrollado por María Camila Villamizar & Carlos Fernando Escobar Silva</h6>", unsafe_allow_html=True)
