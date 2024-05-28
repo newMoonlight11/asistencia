@@ -4,46 +4,74 @@ from PIL import Image
 from facenet_pytorch import InceptionResnetV1, MTCNN
 import matplotlib.pyplot as plt
 import warnings
+from datetime import datetime
+from scipy.spatial.distance import euclidean
+import numpy as np
+import os
 
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
     page_title="Face recognition",
-    page_icon = "	:sauropod:"
+    page_icon=":sauropod:"
 )
 
 st.title("Reconocimiento facial con PyTorch y Streamlit")
 st.write("Somos un equipo apasionado de profesionales dedicados a hacer la diferencia")
 st.write("Este proyecto fue desarrollado por María Camila Villamizar & Carlos Fernando Escobar Silva")
 
-
 class_names = open("./clases.txt", "r").readlines()
 
 # Inicializar dispositivo
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-# Ruta al modelo guardado
-ruta_modelo = 'modelo_inception_resnet_v1.pth'
-
-# Función para cargar el modelo
+# Función para inicializar el modelo
 @st.cache_resource
-def cargar_modelo(ruta_modelo, device):
-    # Inicializar el modelo
+def inicializar_modelo(device):
+    # Inicializar el modelo con pesos preentrenados
     modelo = InceptionResnetV1(pretrained='vggface2', classify=False, device=device).eval()
-    # Cargar el estado del modelo guardado
-    modelo.load_state_dict(torch.load(ruta_modelo, map_location=device))
     return modelo
 
-# Cargar el modelo
+# Inicializar el modelo
 with st.spinner('Modelo está cargando'):
-    encoder = cargar_modelo(ruta_modelo, device)
+    _encoder = inicializar_modelo(device)
 
 # Crear el detector MTCNN
-mtcnn = MTCNN(select_largest=True, min_face_size=20, thresholds=[0.6, 0.7, 0.7], post_process=False, image_size=160, device=device)
+_mtcnn = MTCNN(select_largest=True, min_face_size=20, thresholds=[0.6, 0.7, 0.7], post_process=False, image_size=160, device=device)
 
-def detectar_y_mostrar_caras(image):
+@st.cache_resource
+def obtener_embeddings(ruta_dataset, _encoder, _mtcnn, device):
+    embeddings = []
+    nombres = []
+    for root, dirs, files in os.walk(ruta_dataset):
+        for file in files:
+            if file.endswith(('jpg', 'png', 'jfif')):
+                image_path = os.path.join(root, file)
+                image = Image.open(image_path)
+                
+                # Detección de cara
+                face = _mtcnn(image)
+                if face is not None:
+                    # Embedding de cara
+                    embedding_cara = _encoder.forward(face.reshape((1, 3, 160, 160))).detach().cpu()
+                    embeddings.append(embedding_cara)
+                    # Obtener el nombre de la persona (carpeta)
+                    nombre = os.path.basename(root)
+                    nombres.append(nombre)
+                else:
+                    st.write("")
+    return embeddings, nombres
+
+ruta_dataset = r"data"
+
+# Obtener embeddings de todas las imágenes en el dataset
+with st.spinner('Procesando el dataset...'):
+    embeddings, nombres = obtener_embeddings(ruta_dataset, _encoder, _mtcnn, device)
+    st.write("Embeddings generados para todas las imágenes en el dataset.")
+
+def detectar_y_mostrar_caras(image, embeddings, nombres):
     # Detección de bounding box y landmarks
-    boxes, probs, landmarks = mtcnn.detect(image, landmarks=True)
+    boxes, probs, landmarks = _mtcnn.detect(image, landmarks=True)
 
     if boxes is not None:
         # Dibujar las bounding boxes y landmarks en la imagen
@@ -56,14 +84,23 @@ def detectar_y_mostrar_caras(image):
         st.pyplot(fig)
 
         # Detección de cara
-        face = mtcnn(image)
+        face = _mtcnn(image)
 
         # Embedding de cara
-        embedding_cara = encoder.forward(face.reshape((1, 3, 160, 160))).detach().cpu()
-        st.write(f'Embedding de la cara: {embedding_cara}')
+        if face is not None:
+            embedding_cara = _encoder.forward(face.reshape((1, 3, 160, 160))).detach().cpu()
+
+            # Comparar con embeddings del dataset
+            comparaciones = {}
+            for nombre, embeddings in embeddings.items():
+                min_dist = min(euclidean(embedding_cara.flatten(), emb.flatten()) for emb in embeddings)
+                comparaciones[nombre] = min_dist
+            nombre_reconocido = min(comparaciones, key=comparaciones.get)
+            st.write(f'Persona reconocida: {nombre_reconocido}')
+        else:
+            st.write("No se detectó ninguna cara en la imagen.")
     else:
         st.write("No se detectó ninguna cara en la imagen.")
-
 
 # Subir imagen desde archivo
 uploaded_file = st.file_uploader("Elija una imagen...", type=["jpg", "png", "jfif"])
@@ -75,10 +112,10 @@ if uploaded_file is not None:
     st.image(image, caption='Imagen cargada', use_column_width=True)
     st.write("Detectando caras...")
     
-    detectar_y_mostrar_caras(image)
+    detectar_y_mostrar_caras(image, embeddings, nombres)
 
 # Capturar imagen desde la cámara
-img_file_buffer = st.camera_input("Capture una foto para identificar una cara")
+img_file_buffer = st.camera_input("O capture una foto para identificar una cara")
 if img_file_buffer is not None:
     # Cargar la imagen
     image = Image.open(img_file_buffer)
@@ -87,4 +124,20 @@ if img_file_buffer is not None:
     st.image(image, caption='Imagen capturada', use_column_width=True)
     st.write("Detectando caras...")
     
-    detectar_y_mostrar_caras(image)
+    detectar_y_mostrar_caras(image, embeddings, nombres)
+
+def registrar_asistencia(participantes):
+    fecha_actual = datetime.now().strftime("%Y-%m-%d")
+    archivo_registro = f"registro_asistencia_{fecha_actual}.txt"
+
+    try:
+        with open(archivo_registro, 'r') as archivo:
+            asistencia_previa = archivo.read().splitlines()
+    except FileNotFoundError:
+        asistencia_previa = []
+    
+    nuevos_participantes = [nombre for nombre in participantes if nombre not in asistencia_previa]
+    if nuevos_participantes:
+        with open(archivo_registro, 'a') as archivo:
+            for nombre in nuevos_participantes:
+                archivo.write(nombre + "\n")

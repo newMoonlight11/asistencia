@@ -2,4 +2,5 @@ facenet-pytorch==2.6.0
 pillow==10.2.0
 opencv-python==4.8.0.76
 matplotlib==3.7.1
+scipy==1.13.1
 streamlit
